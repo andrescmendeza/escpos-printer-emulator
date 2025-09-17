@@ -1,4 +1,4 @@
-# EscPrinter Emulator
+# EscPrinter Emulator (Fork)
 
 This project is a fork of the original [ZplEscPrinter](https://github.com/erikn69/ZplEscPrinter) by ErikN. It is a printer emulator for ZPL and ESC/POS rendering, based on the [labelary](http://labelary.com/service.html) web service and [receipt-print-hq/escpos-tools](https://github.com/receipt-print-hq/escpos-tools).
 
@@ -17,10 +17,13 @@ This fork is maintained independently and may include changes, improvements, or 
 - Cross-platform: Windows, Linux, Mac
 
 ## Installation & Usage
+**Note:** If you are using npm and there is a `yarn.lock` file in the project, it is recommended to delete it before running `npm install` to avoid dependency conflicts.
+
 1. Clone this repository.
-2. Run `yarn install` or `npm install` to install dependencies.
-3. Use `yarn start` or `npm start` to run in development mode.
-4. Use `yarn make` or `npm run make` to generate binaries for your OS.
+2. Open a terminal in the project folder.
+3. Run `npm install` to install dependencies.
+4. Run `npm start` to launch the application in development mode.
+5. (Optional) Run `npm run make` to generate binaries for your operating system.
 
 ## References
 - [ZPL Command Support](http://labelary.com/docs.html)
