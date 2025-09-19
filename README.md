@@ -27,9 +27,12 @@ You should see a line like:
 
 ## Test command to send a RAW file via TCP (PowerShell)
 
-Run the following script in PowerShell to send a raw file to the emulator:
 
-```
+### How to send a RAW file to the emulator via TCP
+
+#### Windows (PowerShell)
+Run the following script in PowerShell:
+```powershell
 $client = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 9100)
 $stream = $client.GetStream()
 [byte[]]$bytes = [System.IO.File]::ReadAllBytes("c:\GitHub\escpos-print-emulator\emulator_test.raw")
@@ -38,8 +41,24 @@ $stream.Flush()
 $stream.Close()
 $client.Close()
 ```
-
 Replace the file path with your test file location if needed.
+
+#### Linux (Command Line)
+You can use `nc` (netcat) to send a file:
+```bash
+nc 127.0.0.1 9100 < /path/to/emulator_test.raw
+```
+Replace `/path/to/emulator_test.raw` with your test file location.
+
+#### Mac (Terminal)
+On macOS, you can also use `nc` (netcat):
+```bash
+nc 127.0.0.1 9100 < /path/to/emulator_test.raw
+```
+Replace `/path/to/emulator_test.raw` with your test file location.
+
+> **Note:**
+> The TCP server accumulates all received data in memory and only processes the file once the client closes the connection. This ensures the entire file is received before converting it to base64 and sending it to the ESC/POS or ZPL handler, matching the Desktop flow. If you send a file in multiple chunks, make sure to close the connection after sending to trigger processing.
 
 > **Note:**
 > The TCP server accumulates all received data in memory and only processes the file once the client closes the connection. This ensures the entire file is received before converting it to base64 and sending it to the ESC/POS or ZPL handler, matching the Desktop flow. If you send a file in multiple chunks, make sure to close the connection after sending to trigger processing.
