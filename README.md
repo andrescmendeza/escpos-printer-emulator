@@ -1,3 +1,48 @@
+# TCP configuration and testing
+
+## How to configure the service to listen via TCP
+
+1. Make sure the port and host are set correctly in the graphical interface or configuration:
+	- Host: `0.0.0.0` (or `127.0.0.1` for local only)
+	- Port: `9100` (default)
+2. Turn on the emulator, ensuring the "On" option is active.
+3. Check that the console shows a message like:
+	```
+	Printer started on Host: <b>0.0.0.0</b> Port: <b>9100</b>
+	```
+
+## How to test if the service is listening via TCP
+
+You can use `netstat` to verify that the port is open:
+
+```
+netstat -an | findstr 9100
+```
+
+You should see a line like:
+
+```
+  TCP    0.0.0.0:9100           0.0.0.0:0              LISTENING
+```
+
+## Test command to send a RAW file via TCP (PowerShell)
+
+Run the following script in PowerShell to send a raw file to the emulator:
+
+```
+$client = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 9100)
+$stream = $client.GetStream()
+[byte[]]$bytes = [System.IO.File]::ReadAllBytes("c:\GitHub\escpos-print-emulator\emulator_test.raw")
+$stream.Write($bytes, 0, $bytes.Length)
+$stream.Flush()
+$stream.Close()
+$client.Close()
+```
+
+Replace the file path with your test file location if needed.
+
+> **Note:**
+> The TCP server accumulates all received data in memory and only processes the file once the client closes the connection. This ensures the entire file is received before converting it to base64 and sending it to the ESC/POS or ZPL handler, matching the Desktop flow. If you send a file in multiple chunks, make sure to close the connection after sending to trigger processing.
 # EscPrinter Emulator (Fork)
 
 This project is a fork of the original [ZplEscPrinter](https://github.com/erikn69/ZplEscPrinter) by ErikN. It is a printer emulator for ZPL and ESC/POS rendering, based on the [labelary](http://labelary.com/service.html) web service and [receipt-print-hq/escpos-tools](https://github.com/receipt-print-hq/escpos-tools).
