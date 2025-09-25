@@ -172,7 +172,10 @@ async function zpl(data){
  */
 async function escpos(data,b64){
     let dataAux = data;
-    try{ dataAux = base64DecodeUnicode(data.trim()); b64=true; }catch(e){}
+    try{ dataAux = base64DecodeUnicode(data.trim()); b64=true; }
+    catch(e){
+        console.log('Error decoding base64 data', e);
+    }
 
     if (dataAux === escposCommands.getStatusCommand) {
         return Buffer.from(escposCommands.getEscposStatus());
@@ -350,6 +353,19 @@ function stopTcpServer() {
     notify('Printer stopped on <b>{0}</b> Port: <b>{1}</b>'.format(configs.host, configs.port));
     server = undefined;
 }
+
+// Print test label for ZPL or ESC/POS, encoding the value in the correct template and calling the right function
+function printTestLabel(val, zplPrinter) {
+    let data;
+    if (zplPrinter) {
+        data = btoa('^xa^cfa,50^fo100,100^fd' + val + '^fs^xz');
+        zpl(data);
+    } else {
+        data = btoa("\u001B@\u001Ba\u0001\u001BE\u0001\u001B!V" + val + "\u001BE\u0000\u001Ba\u0000\u000A\u001DVA\u0003");
+        escpos(data, true);
+    }
+}
+
 // Init ui events
 function initEvents() {
     $('#isZpl, #isEsc').on('change', function () {
@@ -401,29 +417,14 @@ function initEvents() {
         e.preventDefault();
     });
 
-    $('#configsForm').on('submit', function (e) {
-        e.preventDefault();
-        saveConfigs();
-    });
-
     $('#testsForm').on('submit', function (e) {
         e.preventDefault();
         let val = $('#test-data').val();
         const zplPrinter = $('#isZpl').is(':checked');
         $('#btn-close-test-md').trigger('click');
-        notify('Printing raw ' + (zplPrinter ? 'zpl' : 'esc/pos')+ ' text test', 'print', 'info', 1000);
-
-        val = val.replaceAll(/\\n/g, '\n').replaceAll(/\\t/g, '\t').replaceAll(/\\r/g, '\r').replaceAll(/\\b/g, '\b')
-
-        if (zplPrinter) {
-            return zpl(val);
-        }
-
-        try{
-            val = JSON.parse(JSON.stringify(val).replaceAll(/(\\\\|\/)[u|U]00/g, '\\u00').replaceAll(/\\\\[x|X]/g, '\\u00'));
-        }catch(e){}
-
-        escpos(val);
+        notify('Printing raw ' + (zplPrinter ? 'zpl' : 'esc/pos') + ' text test', 'print', 'info', 1000);
+        console.log('Val received: ', val);
+        printTestLabel(val, zplPrinter);
     });
 
     $('.btn-close-test-md').on('click', function () {
@@ -431,11 +432,16 @@ function initEvents() {
     });
 
     $('#btn-run-test-hw').on('click', function () {
-        const data = $('#isZpl').is(':checked')
-            ? btoa('^xa^cfa,50^fo100,100^fdHello World^fs^xz')
-            : btoa("\u001B@\u001Ba\u0001\u001BE\u0001\u001B!VHello World\u001BE\u0000\u001Ba\u0000\u000A\u001DVA\u0003");
+        const zplPrinter = $('#isZpl').is(':checked');
+        const val = 'Hello World';
+        // Optionally update the input for user visibility
+        const data = zplPrinter
+            ? btoa('^xa^cfa,50^fo100,100^fd' + val + '^fs^xz')
+            : btoa("\u001B@\u001Ba\u0001\u001BE\u0001\u001B!V" + val + "\u001BE\u0000\u001Ba\u0000\u000A\u001DVA\u0003");
         $('#test-data').val(data);
-        $('#testsForm').submit();
+        notify('Printing Hello World ' + (zplPrinter ? 'zpl' : 'esc/pos') + ' text test', 'print', 'info', 1000);
+        printTestLabel(val, zplPrinter);
+        $('#btn-close-test-md').trigger('click');
     });
 
     $('#btn-raw-file').on('click', function (e) {
