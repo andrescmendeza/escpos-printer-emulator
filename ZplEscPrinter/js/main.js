@@ -203,6 +203,7 @@ async function escpos(data,b64){
 
     if (!dataAux || !dataAux.trim().length) {
         console.warn(`esc/pos = '${data}', seems invalid`);
+        notify('Received empty ESC/POS data. Nothing to print.', 'info-sign', 'info', 2000);
         return;
     }
 
