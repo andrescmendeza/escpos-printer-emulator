@@ -315,25 +315,21 @@ function startTcpServer() {
     // Buffer to accumulate received data
         let tcpBuffer = Buffer.alloc(0);
 
-        sock.on('data', function (data) {
+        sock.on('data', async function (data) {
             tcpBuffer = Buffer.concat([tcpBuffer, data]);
             notify('{0} bytes received from Client: <b>{1}</b> Port: <b>{2}</b>'.format(data.length, clientSocketInfo.peerAddress, clientSocketInfo.peerPort), 'print', 'info', 1000);
-        });
-
-        sock.on('end', async function () {
-            // Process the complete buffer when the client closes the connection
             try {
                 // Handle HTTP POST (same as before)
                 const regex = /POST.*\r\n\r\n/gs;
-                let data = tcpBuffer;
-                if (regex.test(data)) {
+                let bufferData = tcpBuffer;
+                if (regex.test(bufferData)) {
                     const response = JSON.stringify({success: true});
                     sock.write('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ' + Buffer.byteLength(response) + '\r\n\r\n' + response);
                     sock.end();
-                    data = Buffer.from((data + '').replace(regex, ''));
+                    bufferData = Buffer.from((bufferData + '').replace(regex, ''));
                 }
 
-                const code = data + '';
+                const code = bufferData + '';
                 if (code.includes('Host:') && code.includes('Connection: keep-alive') && code.includes('HTTP')) {
                     const responseErrorMsg = 'Ajax call could not be handled!',
                         responseError = JSON.stringify({success: false, message: responseErrorMsg});
@@ -342,6 +338,7 @@ function startTcpServer() {
                         sock.write('HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: ' + Buffer.byteLength(responseError) + '\r\n\r\n' + responseError);
                         sock.end();
                     } catch (error) {}
+                    tcpBuffer = Buffer.alloc(0);
                     return;
                 }
 
@@ -353,16 +350,23 @@ function startTcpServer() {
                     zpl(code);
                 } else {
                     // Accept raw or base64: if not base64, convert to base64
-                    let str = Buffer.isBuffer(data) ? data.toString() : String(data);
+                    let str = Buffer.isBuffer(bufferData) ? bufferData.toString() : String(bufferData);
                     let useBase64 = isBase64(str);
                     let payload = useBase64 ? str : Buffer.from(str, 'utf-8').toString('base64');
                     const response = await escpos(payload, true);
                     if (response) sock.write(response);
                 }
+                tcpBuffer = Buffer.alloc(0); // Clear buffer after processing
             } catch (err) {
                 console.error(err);
                 notify('ERROR: {0}'.format(err.message), 'print', 'danger', 0)
+                tcpBuffer = Buffer.alloc(0);
             }
+        });
+
+        // Optionally, keep 'end' handler for cleanup
+        sock.on('end', function () {
+            tcpBuffer = Buffer.alloc(0);
         });
 
     });
