@@ -371,9 +371,89 @@ function startTcpServer() {
     // Buffer to accumulate received data
         let tcpBuffer = Buffer.alloc(0);
 
+        // Function to check if buffer contains complete ESC/POS commands or printable data
+        function hasCompleteCommand(buffer) {
+            const str = buffer.toString('binary'); // Use binary to preserve all bytes
+            
+            // Check for graphics commands that need complete data
+            // ESC * (bit image) - format: ESC * m nL nH d1...dk
+            const escStarMatch = str.match(/\x1B\*(.)(.)(.)/);
+            if (escStarMatch) {
+                const nL = escStarMatch[2].charCodeAt(0);
+                const nH = escStarMatch[3].charCodeAt(0);
+                const expectedBytes = nL + (nH * 256);
+                const commandStart = str.indexOf('\x1B\*');
+                const dataStart = commandStart + 4;
+                const actualDataLength = buffer.length - dataStart;
+                if (actualDataLength < expectedBytes) {
+                    console.log(`Graphics command incomplete: need ${expectedBytes} bytes, have ${actualDataLength}`);
+                    return false; // Need more data
+                }
+            }
+            
+            // GS v 0 (raster graphics) - format: GS v 0 m xL xH yL yH d1...dk
+            const gsV0Match = str.match(/\x1Dv0(.)(.)(.)(.)(.)/);
+            if (gsV0Match) {
+                const xL = gsV0Match[2].charCodeAt(0);
+                const xH = gsV0Match[3].charCodeAt(0);
+                const yL = gsV0Match[4].charCodeAt(0);
+                const yH = gsV0Match[5].charCodeAt(0);
+                const width = xL + (xH * 256);
+                const height = yL + (yH * 256);
+                const expectedBytes = Math.ceil(width / 8) * height;
+                const commandStart = str.indexOf('\x1Dv0');
+                const dataStart = commandStart + 8;
+                const actualDataLength = buffer.length - dataStart;
+                if (actualDataLength < expectedBytes) {
+                    console.log(`Raster graphics command incomplete: need ${expectedBytes} bytes, have ${actualDataLength}`);
+                    return false; // Need more data
+                }
+            }
+            
+            // Check for common ESC/POS command terminators or complete sequences
+            if (str.includes('\n') || str.includes('\r')) return true; // Text with line breaks
+            if (str.includes('\x0A') || str.includes('\x0D')) return true; // LF or CR
+            if (str.includes('\x1D\x56') || str.includes('\x1B\x69')) return true; // Cut commands
+            if (str.includes('\x1B\x40')) return true; // Initialize printer
+            if (str.includes('\x1B\x4A')) return true; // Feed lines
+            if (str.includes('\x1B\x64')) return true; // Feed lines
+            if (str.includes('\x07')) return true; // Bell/Beep
+            
+            // If buffer has data but no graphics commands detected, it's probably complete
+            return buffer.length > 0;
+        }
+
+        let processingTimer = null;
+
         sock.on('data', async function (data) {
             tcpBuffer = Buffer.concat([tcpBuffer, data]);
             notify('{0} bytes received from Client: <b>{1}</b> Port: <b>{2}</b>'.format(data.length, clientSocketInfo.peerAddress, clientSocketInfo.peerPort), 'print', 'info', 1000);
+            
+            // Clear any existing timer
+            if (processingTimer) {
+                clearTimeout(processingTimer);
+            }
+
+            // Check if we have a complete command to process
+            if (hasCompleteCommand(tcpBuffer)) {
+                await processBuffer();
+            } else {
+                // Set a timer to process buffer after a short delay if no more data comes
+                processingTimer = setTimeout(async () => {
+                    if (tcpBuffer.length > 0) {
+                        console.log(`Processing buffer after timeout: ${tcpBuffer.length} bytes`);
+                        await processBuffer();
+                    }
+                }, 500); // 500ms delay for incomplete commands (increased for graphics)
+            }
+        });
+
+        async function processBuffer() {
+            if (processingTimer) {
+                clearTimeout(processingTimer);
+                processingTimer = null;
+            }
+
             try {
                 // Handle HTTP POST (same as before)
                 const regex = /POST.*\r\n\r\n/gs;
@@ -405,25 +485,37 @@ function startTcpServer() {
                 if ($('#isZpl').is(':checked')) {
                     zpl(code);
                 } else {
-                    // Accept raw or base64: if not base64, convert to base64
-                    let str = Buffer.isBuffer(bufferData) ? bufferData.toString() : String(bufferData);
-                    let useBase64 = isBase64(str);
-                    let payload = useBase64 ? str : Buffer.from(str, 'utf-8').toString('base64');
-                    const response = await escpos(payload, true);
-                    if (response) sock.write(response);
+                    // Check if data is already base64 encoded
+                    let str = bufferData.toString('utf8');
+                    if (isBase64(str)) {
+                        // Data is already base64, use it directly
+                        console.log('[TCP] Processing base64 encoded data, length:', str.length);
+                        const response = await escpos(str, null, true);
+                        if (response) sock.write(response);
+                    } else {
+                        // Data is raw binary ESC/POS, convert to base64 preserving binary integrity
+                        console.log('[TCP] Processing raw ESC/POS data, converting to base64, length:', bufferData.length);
+                        const base64Data = bufferData.toString('base64');
+                        const response = await escpos(base64Data, null, true);
+                        if (response) sock.write(response);
+                    }
                 }
                 tcpBuffer = Buffer.alloc(0); // Clear buffer after processing
             } catch (err) {
                 console.error(err);
-                notify('ERROR: {0}'.format(err.message), 'print', 'danger', 0)
+                notify('ERROR: {0}'.format(err.message), 'print', 'danger', 0);
                 tcpBuffer = Buffer.alloc(0);
+            }
+        }
+
+        sock.on('end', async function () {
+            // Process any remaining buffer when connection closes
+            if (tcpBuffer.length > 0) {
+                await processBuffer();
             }
         });
 
-        // Optionally, keep 'end' handler for cleanup
-        sock.on('end', function () {
-            tcpBuffer = Buffer.alloc(0);
-        });
+
 
     });
 }
