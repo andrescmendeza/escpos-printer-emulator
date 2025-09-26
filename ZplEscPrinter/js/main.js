@@ -485,6 +485,13 @@ function startTcpServer() {
                 if ($('#isZpl').is(':checked')) {
                     zpl(code);
                 } else {
+                    // Check if buffer is empty or contains only whitespace
+                    if (!bufferData || bufferData.length === 0 || !bufferData.toString().trim()) {
+                        console.log('[TCP] Empty data received');
+                        notify('TCP: Received empty data. Nothing to print.', 'info-sign', 'warning', 2000);
+                        return;
+                    }
+                    
                     // Check if data is already base64 encoded
                     let str = bufferData.toString('utf8');
                     if (isBase64(str)) {
@@ -512,6 +519,10 @@ function startTcpServer() {
             // Process any remaining buffer when connection closes
             if (tcpBuffer.length > 0) {
                 await processBuffer();
+            } else {
+                // Connection closed without sending any data
+                console.log('[TCP] Connection closed with no data received');
+                notify('TCP: Connection closed without data. Nothing to print.', 'info-sign', 'warning', 2000);
             }
         });
 
