@@ -183,6 +183,21 @@ async function zpl(data){
  * @returns {Promise<Buffer<ArrayBufferLike> | null>} - The response to send back to the client
  */
 async function escpos(data,b64){
+    // Play beep if ESC/POS beep command detected (BEL '\x07' or ESC B n t)
+    function playBeep() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = 'square';
+            o.frequency.value = 2000;
+            g.gain.value = 0.2;
+            o.connect(g).connect(ctx.destination);
+            o.start();
+            setTimeout(() => { o.stop(); ctx.close(); }, 150);
+        } catch (e) { /* ignore */ }
+    }
+
     let dataAux = data;
     try {
         dataAux = base64DecodeUnicode(data.trim());
@@ -209,6 +224,17 @@ async function escpos(data,b64){
 
     // Detect if dataAux contains ESC/POS commands (at least one ESC char)
     const hasEscposCommands = /\u001B/.test(dataAux) || dataAux.includes(String.fromCharCode(27));
+
+    // Check for beep command: BEL (\x07) or ESC B n t
+    if (dataAux.includes('\x07') || dataAux.includes(String.fromCharCode(7))) {
+        playBeep();
+    }
+    // ESC B n t (beep command)
+    // ESC/POS: \x1B B n t
+    const escBRegex = /\x1B[Bb].{2}/g;
+    if (escBRegex.test(dataAux) || /\u001BB.{2}/.test(dataAux)) {
+        playBeep();
+    }
     const factor = configs.unit === '4' ? 1 : (configs.unit === '3' ? 379.921465 : (configs.unit === '2' ? 37.9921465 : 96.5));
     const width = Math.round(parseFloat(configs.width) * factor * 1000) / 1000;
     dataAux = dataAux.replace("\u001B@", '').trim();
@@ -244,16 +270,46 @@ async function escpos(data,b64){
 
     return null;
 }
-async function displayEscPosLabel (data){
+// Print ESC/POS buffer line by line with delay to simulate real printer speed
+async function printEscposBuffer(html, delayMs = 100) {
+    // Split by lines for simulation
+    const lines = html.split(/\r?\n/);
+    let output = '';
+    // Always create a new frame for each print job
     let frame = $('<iframe class="label-esc w-100"></iframe>');
-    frame.attr('srcdoc', base64DecodeUnicode(data));
     $('#label-esc').prepend(frame);
+    for (let i = 0; i < lines.length; i++) {
+        output += lines[i] + '\n';
+        frame.attr('srcdoc', `<html><body style=\"background-color:white;border:1px #dee2e6 solid;\"><div style=\"font-family:monospace;white-space:pre;\">${output.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></body></html>`);
+        frame.on('load', function () {
+            frame.height((frame.contents().find("body").height() + 30) + 'px');
+            $('#label-esc').css({'top': `-${frame.height() - 28}px`}).animate({'top': '0px'}, 500);
+        });
+        frame.trigger('load');
+        await new Promise(res => setTimeout(res, delayMs));
+    }
+}
+
+// Modified displayEscPosLabel to use printEscposBuffer for plain text
+async function displayEscPosLabel (data, simulateSpeed = true) {
+    let html = base64DecodeUnicode(data);
+    // If plain text (no HTML tags except basic), simulate speed
+    if (simulateSpeed && /<div style=\"font-family:monospace;white-space:pre;\">/.test(html)) {
+        // Extract only the text inside the div
+        const match = html.match(/<div style=\"font-family:monospace;white-space:pre;\">([\s\S]*?)<\/div>/);
+        if (match) {
+            await printEscposBuffer(match[1]);
+            return;
+        }
+    }
+    // Default: show all at once, always create a new frame
+    let frame = $('<iframe class="label-esc w-100"></iframe>');
+    $('#label-esc').prepend(frame);
+    frame.attr('srcdoc', html);
     frame.on('load',function(){
-        //console.log(frame.contents().find("body").height());
         frame.height((frame.contents().find("body").height() + 30) + 'px');
         $('#label-esc').css({'top': `-${frame.height() - 28}px`}).animate({'top': '0px'}, 1500);
     });
-
     frame.trigger('load');
 }
 async function displayZplImage(api_url, zpl, width, height) {
